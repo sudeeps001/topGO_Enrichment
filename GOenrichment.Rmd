@@ -1,0 +1,227 @@
+---
+title: "GO enrichment analysis"
+author: "Sudeep Sahadevan"
+output: 
+ BiocStyle::html_document:
+  toc: yes
+  theme: united
+  highlight: tango
+---
+
+Helper functions to do GO enrichment analysis based on the Bioconductor package [topGO](https://www.bioconductor.org/packages/release/bioc/html/topGO.html)  
+
+### Dependencies
+
+* [doMC](https://cran.r-project.org/web/packages/doMC/index.html)
+* [foreach](https://cran.r-project.org/web/packages/foreach/index.html)
+* [GO.db](http://bioconductor.org/packages/release/data/annotation/html/GO.db.html)
+* [gplots](https://cran.r-project.org/web/packages/gplots/index.html)
+* [igraph](https://cran.r-project.org/web/packages/igraph/index.html)
+* [org.At.tair.db](http://bioconductor.org/packages/release/data/annotation/html/org.At.tair.db.html) only for Arabidopsis annotations for not too long.
+* [topGO](https://www.bioconductor.org/packages/release/bioc/html/topGO.html)
+* [WriteXLS](https://cran.r-project.org/web/packages/WriteXLS/index.html)
+* [XML](https://cran.r-project.org/web/packages/XML/index.html)
+
+## **get_topGO_list**
+
+##### <a name="g_t_l"></a>Description
+Convert Gene Ontology table into a list compatabile with topGO   
+
+##### Parameters
+
+* GO_table : must have atleast two columns, where first column is the gene to GO mapping and second column is the GO id
+* minThresh : minimum number of Gene annotations for a GO term (default: 5)
+
+##### Usage
+```{r gtl}
+go_genes
+topGO_list <- get_topGO_list(go_genes,minThresh=0)
+topGO_list
+```
+
+##### Return
+A list
+
+## **get_GO_graph**
+
+##### <a name="gGgFn"></a>Description
+
+Generate DAG igraph object of a given [Gene Ontology](http://geneontology.org/page/ontology-documentation), based on [igraph recipe](http://igraph.wikidot.com/r-recipes)
+
+##### Parameters
+
+* ontology: Must be one of "BP", "CC", "MF" or "ALL". "BP": Biological Process, "CC": Cellular components, "MF": Molecular Function, "ALL" combines all ontologies. Default is "BP"   
+
+##### Usage
+```{r gGg}
+go_graph <- get_GO_graph()
+go_graph
+```
+##### Return
+
+R igraph object
+
+##**do_topGO_enrichment**
+
+##### <a name="dtGFn"></a>Description
+
+Given a list of gene identifiers and a list of Gene Ontology mappings (see [get_topGO_list](#g_t_l)) do GO enrichment analysis based on topGO algorithm.
+
+##### Parameters
+
+* <a name="gll"></a>gene_lists : DEG gene list
+* topGO_list  : GO annotation list, see [topGO](http://bioconductor.org/packages/release/bioc/html/topGO.html) vignette and manual for details and function [get_topGO_list](#g_t_l)
+* ontology : MUST be one of (BP,MF,CC) (default: BP) and MUST be the same as the ontology type for topGO_list
+* topGO_algorithm : topGO algorithm to use, see topGO manual (default: weight01)
+* topGO_statistic : topGO statistic test to use, see topGO manual (default: fisher)
+* pval_cutoff : pvalue cut off for enriched GO terms (default: 0.1) 
+* node_size : before tests, prune GO hierarchy for terms with less than node_size genes annotated (default: 3)
+* ncpus : whether use more than one core at a time to run multiple tests, works only on a multicore cpu (Duh!) and require libraries doMC and foreach
+
+##### Usage
+```{r d_t_e1}
+gene_list
+```
+```{r d_t_e2,eval=FALSE}
+gene_enrichment <- do_topGO_enrichment(gene_lists=gene_list,topGO_list=topGO_list,ontology="BP",topGO_algorithm="weight01",topGO_statistic="fisher",pval_cutoff=0.1,node_size=3,enrichment=3,ncpus=1)
+``` 
+ 
+```{r d_t_e31}
+names(gene_enrichment)
+names(gene_enrichment[[1]])
+```
+<a name="ge1"></a>topGO output
+```{r d_t_e32}
+head(gene_enrichment[[1]]$enrichment)
+```
+
+#####<a name="ret1"></a> Return
+
+Returns a list where each element has two named attributes:  
+
+* enrichment: Gene enrichment
+* testClass: Name of the experiment
+
+##**get_genes_topGO_enrichment**
+
+#####<a name="ggteFn"></a> Description
+
+Add genes to topGO enrichment tables from topGO test. Due to the nature of enrichment test done in topGO, the default test results does not contain genes associated with an enriched GO term.
+
+##### Parameters
+
+* go_graph : GO as an igraph object (output from function [get_GO_graph](#gGgFn))
+* go_gene_annotations : GO term to gene annotation list (output from function [get_topGO_list](#g_t_l))
+* topGO_enrichment : topGO enrichment list (output from function [do_topGO_enrichment](#dtGFn))
+* gene_list : Gene list used in topGO enrichment (same input as [gene_lists](#gll))
+
+##### Usage
+```{r, eval=FALSE}
+gene_enrichment_annotated  <- get_genes_topGO_enrichment(go_graph=go_graph,go_gene_list=topGO_list,topGO_enrichment=gene_enrichment,gene_list=gene_list)
+```
+```{r g_g_t_e}
+names(gene_enrichment_annotated )
+names(gene_enrichment_annotated [[1]])
+head(gene_enrichment_annotated [[1]]$enrichment)
+```
+Comparing this result to the [previous one](#ge1), the genes annotated to the enriched GO term, child terms of the enriched GO terms are added here
+
+##### Return
+
+Same as [do_topGO_enrichment return](#ret1)
+
+##**generate_GO_graph**
+
+#####<a name="genGOgraph"></a> Description
+
+Function to generate Xgmml objects for enriched GO terms based on input GO enriched terms, corresponding p-values and a GO graph igraph object. The xgmml files are for visualization using [Cytoscape](http://www.cytoscape.org/)
+
+#####<a name="genGOParam"></a> Parameters
+
+* go_graph : GO graph (igraph object, output from function [get_GO_graph](#get_GO_graph))
+	* vertexName : go_graph vertex attribute name for GO term names (default for go_graph : goName)
+* ontology : MUST be one of (BP,CC,MF)
+* enrichedGOTable : GO enrichment table from topGO (see [do_topGO_enrichment return](#ret1))
+	* goIdCol : GO term id column (default : 1)
+	* pvalCol : P-value column (default : 6)
+* beginColor : Color for the most enriched terms (default : green)
+* endColor : Color for the least enriched terms (default : yellow)
+* getXgmml : Boolean, return Xgmml or igraph object (default : TRUE)
+* graphName : A string with specific name for the graph (default : enriched terms)
+
+##### Usage
+```{r gGgFn2,message=FALSE}
+enriched_graph1 <- generate_GO_graph(go_graph,ontology="BP",enrichedGOTable=gene_enrichment[[1]]$enrichment,goIdCol=1,pvalCol=6,beginColor="green",endColor="yellow",vertexName="goName",getXgmml=TRUE,graphName="enriched terms")
+```
+```{r gGgFn3}
+class(enriched_graph1)
+```
+
+##### Return
+
+An XML object or an igraph object (determined by parameter getXgmml)
+
+##**generate_GO_graph_enrichmentList**
+
+##### Description
+
+A wrapper function for [generate_GO_graph](#genGOgraph) where the output from function[do_topGO_enrichment](#dtGFn) can be used an input.
+
+#####<a name="gggWrap"></a> Parameters
+
+* enrichmentList: See [return description for do_topGO_enrichment](ret1)    
+For description of rest of the parameters see [generate_GO_graph parameters](#genGOParam)
+
+##### Usage
+```{r,eval=FALSE}
+gene_enrichment_xml <- generate_GO_graph_enrichmentList(enrichmentList=gene_enrichment,go_graph=go_graph)
+```
+```{r xgmml}
+class(gene_enrichment_xml)
+names(gene_enrichment_xml)
+class(gene_enrichment_xml[[1]])
+```
+
+##### Return
+
+A list of XML objects
+
+##**save_enrichmentList_xls**
+
+##### Description
+
+Save the enrichment tables generated by the functions do_topGO_enrichment OR get_genes_topGO_enrichment
+into an .xls file
+
+##### Parameters
+
+* enrichmentList: Output from [do_topGO_enrichment](#dtGFn) OR [get_genes_topGO_enrichment](#ggteFn)
+* fileNameHead: A string attribute that is added to `names(enrichmentList)` for saving, could be a folder path `fileNameHead="../Tables/GO_enrichment"`
+
+##### Usage
+```{r,eval=FALSE}
+save_enrichment_xls(enrichmentList=gene_enrichment_annotated,fileNameHead="../Tables/GO_enrichment")
+```
+
+##### Return
+
+NULL
+
+##**save_enrichmentList_visual**
+
+##### Description
+
+Save the list of xgmml files generated by function generate_GO_graph_enrichmentList
+
+##### Parameters
+* visualEnrichmentList : list of xgmml objects (output from [generate_GO_graph_enrichmentList](#gggWrap))
+* fileNameHead : header for file names (for output file naming)
+* fileNameTail : file name extension (for output files)
+
+##### Usage
+```{r,eval=FALSE}
+save_enrichmentList_visual(visualEnrichmentList=gene_enrichment_xml,fileNameHead="../Figures/GO_enrichment",fileNameTail=".xgmml")
+```
+##### Return
+
+NULL
